@@ -66,11 +66,7 @@ def get_manifest(api_key: str):
         "description": "Verifica si el título está en digital (requiere TMDB API Key).",
         "resources": ["stream"],
         "types": ["movie", "series"],
-        "catalogs": [],
-        "behaviorHints": {
-            "configurable": True,
-            "configurationRequired": True
-        }
+        "catalogs": []
     }
 
 # 3. Endpoint que usa la API Key que el usuario guardó en la URL

@@ -75,22 +75,28 @@ async def get_stream(api_key: str, type: str, imdb_id: str):
     clean_imdb_id = imdb_id.split(":")[0]
     tmdb_type = "tv" if type == "series" else "movie"
     
-    plataformas = await obtener_plataformas_tmdb(api_key, clean_imdb_id, tmdb_type)
+    resultado = await obtener_plataformas_tmdb(api_key, clean_imdb_id, tmdb_type)
     
     # Manejo de error si la API Key es incorrecta
-    if plataformas is None:
+    if resultado is None:
          return {"streams": [{"name": "Error", "title": "API Key de TMDB inválida"}]}
+         
+    plataformas = resultado.get("plataformas", [])
+    fecha_digital = resultado.get("fecha_digital")
     
     if plataformas:
-        texto_plataformas = ", ".join(plataformas[:10])
-        if len(plataformas) > 10:
-            texto_plataformas += " y más..."
+        primera_plataforma = plataformas[0]
+        
+        if fecha_digital:
+            titulo = f"Disponible en: {primera_plataforma}\nDesde: {fecha_digital}"
+        else:
+            titulo = f"Disponible en: {primera_plataforma}"
             
         return {
             "streams": [
                 {
                     "name": "OK",
-                    "title": f"Disponible en digital:\n{texto_plataformas}",
+                    "title": titulo,
                     "externalUrl": f"https://www.themoviedb.org/{tmdb_type}/{clean_imdb_id}" 
                 }
             ]
@@ -112,7 +118,7 @@ async def obtener_plataformas_tmdb(api_key: str, imdb_id: str, tmdb_type: str):
             resultados = data_find.get(f"{tmdb_type}_results", [])
             
             if not resultados:
-                return []
+                return {"plataformas": [], "fecha_digital": None}
                 
             tmdb_id = resultados[0]["id"]
 
@@ -122,14 +128,34 @@ async def obtener_plataformas_tmdb(api_key: str, imdb_id: str, tmdb_type: str):
             prov_data = res_prov.json()
             
             paises_data = prov_data.get("results", {})
-            disponibles = set()
+            disponibles = []
             
             for pais_info in paises_data.values():
                 for categoria in ["flatrate", "rent", "buy"]:
                     if categoria in pais_info:
                         for proveedor in pais_info[categoria]:
-                            disponibles.add(proveedor["provider_name"])
+                            if proveedor["provider_name"] not in disponibles:
+                                disponibles.append(proveedor["provider_name"])
+            
+            plataformas = disponibles
+            
+            # 3. Consultar fecha de lanzamiento digital (tipo 4)
+            fecha_digital = None
+            if tmdb_type == "movie":
+                rel_url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/release_dates?api_key={api_key}"
+                res_rel = await client.get(rel_url)
+                if res_rel.status_code == 200:
+                    rel_data = res_rel.json().get("results", [])
+                    fechas_digitales = []
+                    for pais in rel_data:
+                        for rd in pais.get("release_dates", []):
+                            if rd.get("type") == 4:
+                                dt = rd.get("release_date", "")
+                                if dt:
+                                    fechas_digitales.append(dt[:10])
+                    if fechas_digitales:
+                        fecha_digital = min(fechas_digitales)
                             
-            return sorted(list(disponibles))
+            return {"plataformas": plataformas, "fecha_digital": fecha_digital}
         except Exception:
             return None
